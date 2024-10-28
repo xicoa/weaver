@@ -22,9 +22,9 @@ trainset_res2p=$(for i in $(seq -w 0000 0199); do echo -n "Res2P:${DATADIR}/Pyth
 trainset_res34p=$(for i in $(seq -w 0000 0859); do echo -n "Res34P:${DATADIR}/Pythia/Res34P_$i.parquet "; done)
 trainset_qcd=$(for i in $(seq -w 0000 0279); do echo -n "QCD:${DATADIR}/Pythia/QCD_$i.parquet "; done)
 
-valset_res2p=$(for i in $(seq -w 0200 0249); do echo -n "${DATADIR}/Pythia/Res2P_$i.parquet "; done)
-valset_res34p=$(for i in $(seq -w 0860 1074); do echo -n "${DATADIR}/Pythia/Res34P_$i.parquet "; done)
-valset_qcd=$(for i in $(seq -w 0280 0349); do echo -n "${DATADIR}/Pythia/QCD_$i.parquet "; done)
+valset_res2p=$(for i in $(seq -w 0200 0249); do echo -n "Res2P:${DATADIR}/Pythia/Res2P_$i.parquet "; done)
+valset_res34p=$(for i in $(seq -w 0860 1074); do echo -n "Res34P:${DATADIR}/Pythia/Res34P_$i.parquet "; done)
+valset_qcd=$(for i in $(seq -w 0280 0349); do echo -n "QCD:${DATADIR}/Pythia/QCD_$i.parquet "; done)
 
 ARG="--network-config networks/pheno2/example_Sophon.py -o num_classes 188 -o fc_params [(512,0.1)] \
 --use-amp --batch-size 512 --start-lr 5e-4 --samples-per-epoch $((10000 * 1024 / $NGPUS)) --samples-per-epoch-val $((2500 * 1024 / $NGPUS)) --num-epochs 80 --optimizer ranger \

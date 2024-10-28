@@ -234,7 +234,7 @@ def _read_root(filepath, branches, load_range=None, treename=None):
     '''
     # for training with v10
     specific_vars = {
-        "not 'Spin0ToTT' in filepath and not 'DiH1OrHpm' in filepath": {'fj_gen_pid': 0, 'fj_gendau1_pid': 0},
+        "not 'Spin0ToTT' in filepath and not 'DiH1OrHpm' in filepath and not 'TTtoLNu2Q_TuneCP5_13p6TeV' in filepath and not 'infer_UL17/BulkGravTo' in filepath": {'fj_gen_pid': 0, 'fj_gendau1_pid': 0},
     }
     specific_vars_included = {}
     '''

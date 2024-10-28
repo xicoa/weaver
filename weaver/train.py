@@ -708,12 +708,19 @@ def model_setup(args, data_config):
         
         # for stage3 model
         elif args.load_model_weights.startswith('finetune_stage3'):
-            if args.load_model_weights.startswith('finetune_stage3beta4'):
+            if args.load_model_weights == 'finetune_stage3beta4':
                 model_state = torch.load("./model/ak8_MD_inclv10beta4_ul_manual.ddp4-bs640-lr1p2e-3.nepoch100.farm221/net_best_epoch_state.pt", map_location='cpu')
                 model_state = {f'main.{k}': v for k, v in model_state.items()}
                 missing_keys, unexpected_keys = model.load_state_dict(model_state, strict=False)
                 assert len(unexpected_keys) == 0
                 _logger.info('Model initialized with weights from GloParT v3beta4\n ... Missing: %s\n ... Unexpected: %s' %
+                        (missing_keys, unexpected_keys))
+            if args.load_model_weights == 'finetune_stage3beta4p1':
+                model_state = torch.load("./model/ak8_MD_inclv10beta4_ul_manual.nlayer10.vispart_as_resid.ddp4-bs640-lr1p2e-3.nepoch100.farm221/net_best_epoch_state.pt", map_location='cpu')
+                model_state = {f'main.{k}': v for k, v in model_state.items()}
+                missing_keys, unexpected_keys = model.load_state_dict(model_state, strict=False)
+                assert len(unexpected_keys) == 0
+                _logger.info('Model initialized with weights from GloParT v3beta4p1\n ... Missing: %s\n ... Unexpected: %s' %
                         (missing_keys, unexpected_keys))
 
         else:

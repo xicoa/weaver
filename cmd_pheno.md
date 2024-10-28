@@ -2393,6 +2393,7 @@ extselection="--extra-selection (ak.values_astype(np.tan(jet_energy)*100000,'int
 trainvalopts="--run-mode train,val --num-workers 3 --fetch-step 1. --data-split-num 50 --log-file logs/${PREFIX}/train_val.log --data-train $trainset0p1_res2p $trainset0p1_res34p $trainset0p1_qcd --samples-per-epoch $((1000 * 1024 / $NGPUS))"
 
 source scripts/train_Sophon_v1.sh run 0,2 --batch-size 1536 --start-lr 2e-3 $modelopts $extselection $trainvalopts
+source scripts/train_Sophon_v1.sh autorecover 0 --batch-size 1536 --start-lr 2e-3 $modelopts $extselection $trainvalopts
 
 ### formal runs on ihep
 
@@ -2407,6 +2408,65 @@ trainset0p1_qcd=$(for i in $(seq -w 0000 0027); do echo -n "QCD:${DATADIR}/Pythi
 
 NGPUS=4
 extselection="--extra-selection-train (ak.values_astype(np.tan(jet_energy)*100000,'int')%5==0) "
-trainvalopts="--run-mode train,val --num-workers 3 --fetch-step 1. --data-split-num 50 --log-file logs/${PREFIX}/train_val.log --data-train $trainset0p1_res2p $trainset0p1_res34p $trainset0p1_qcd --samples-per-epoch $((1000 * 1024 / $NGPUS))"
+trainvalopts="--run-mode train,val --num-workers 4 --fetch-step 1. --data-split-num 50 --log-file logs/${PREFIX}/train_val.log --data-train $trainset0p1_res2p $trainset0p1_res34p $trainset0p1_qcd --samples-per-epoch $((1000 * 1024 / $NGPUS))"
 
 source scripts/train_Sophon_v1.sh run 0,1,2,3 --batch-size 2048 --start-lr 6e-3 $modelopts $extselection $trainvalopts 
+source scripts/train_Sophon_v1.sh run 0,1,2,3 --batch-size 2048 --start-lr 6e-3 $modelopts $extselection $trainvalopts --num-epoch 160 --load-epoch 55
+source scripts/train_Sophon_v1.sh run 0,1,2,3 --batch-size 2048 --start-lr 6e-3 $modelopts $extselection $trainvalopts --num-epoch 160 --load-epoch 132
+
+#### then fine-tune this model
+
+PREFIX=JetClassII_full_nonscale_manual.CLIP_finetune_241011.data0p1.clip-with-cls.share_token.beta10
+
+pattern='(mod|module\.mod)\.(?!fc).*' ## possible new choice
+##pattern='(mod|module\.mod)\.(?!cls_token|cls_blocks|norm|fc).*' ## or the original choice
+modelinitpath="model/JetClassII_full_CLIP_nonscale_manual.data0p1.clip-with-cls.share_token.beta10.ddp4-bs2048-lr6e-3/net_epoch-143_state.pt"
+modelopts="--network-config networks/pheno2/example_Sophon_CLIP.py -o clip_kw {'mode':'clip-finetune','beta':0.,'init_path':'$modelinitpath','init_opts':{'load_fc':False}} --optimizer-option lr_mult ('$pattern',1e-1)"
+
+config=./data_pheno/JetClassII_v2/${PREFIX%%.*}.yaml
+DATADIR=/publicfs/cms/user/licq/datasets/JetClassII # ihep
+trainset0p1_res2p=$(for i in $(seq -w 0000 0019); do echo -n "Res2P:${DATADIR}/Pythia/Res2P_$i.parquet "; done)
+trainset0p1_res34p=$(for i in $(seq -w 0000 0085); do echo -n "Res34P:${DATADIR}/Pythia/Res34P_$i.parquet "; done)
+trainset0p1_qcd=$(for i in $(seq -w 0000 0027); do echo -n "QCD:${DATADIR}/Pythia/QCD_$i.parquet "; done)
+
+NGPUS=4
+extselection="--extra-selection-train (ak.values_astype(np.tan(jet_energy)*100000,'int')%5==0) "
+trainvalopts="--run-mode train,val --num-workers 3 --fetch-step 1. --data-split-num 50 --log-file logs/${PREFIX}/train_val.log --data-train $trainset0p1_res2p $trainset0p1_res34p $trainset0p1_qcd --samples-per-epoch $((1000 * 1024 / $NGPUS))"
+
+source scripts/train_Sophon_v1.sh run 0,1,2,3 --batch-size 2048 --start-lr 6e-3 $modelopts $extselection $trainvalopts
+
+#### evaluate the 143 model..
+
+PREFIX=JetClassII_full_CLIP_nonscale_manual.data0p1.clip-with-cls.share_token.beta10.ddp4-bs2048-lr6e-3
+modelopts="--network-config networks/pheno2/example_Sophon_CLIP.py -o clip_kw {'mode':'clip-with-cls','share_token':True,'main_cont_fc_parmas':[(512,0.1)],'beta':10.} " # use single class token
+
+config=./data_pheno/JetClassII_v2/${PREFIX%%.*}.yaml
+DATADIR=/publicfs/cms/user/licq/datasets/JetClassII # ihep
+DATADIR=/home/olympus/licq/datasets/JetClassII
+trainset0p1_res2p=$(for i in $(seq -w 0000 0019); do echo -n "Res2P:${DATADIR}/Pythia/Res2P_$i.parquet "; done)
+trainset0p1_res34p=$(for i in $(seq -w 0000 0085); do echo -n "Res34P:${DATADIR}/Pythia/Res34P_$i.parquet "; done)
+trainset0p1_qcd=$(for i in $(seq -w 0000 0027); do echo -n "QCD:${DATADIR}/Pythia/QCD_$i.parquet "; done)
+
+NGPUS=4
+extselection="--extra-selection-train (ak.values_astype(np.tan(jet_energy)*100000,'int')%5==0) "
+valopts="--run-mode val --num-workers 4 --fetch-step 1. --data-split-num 50 --data-train $trainset0p1_res2p $trainset0p1_res34p $trainset0p1_qcd --samples-per-epoch $((1000 * 1024 / $NGPUS))"
+
+source scripts/train_Sophon_v1.sh run 2 --batch-size 2048 --start-lr 6e-3 $modelopts $extselection $valopts --num-epoch 160 --load-epoch 143 --samples-per-epoch-val 2048
+
+## CLIP but gencls-only first
+
+PREFIX=JetClassII_full_gencls_nonscale_manual.data0p1.gencls-only.ddp4-bs2048-lr6e-3
+modelopts="--network-config networks/pheno2/example_Sophon_CLIP.py -o clip_kw {'mode':'gencls-only','beta':0} -o gen_model_kw {'num_classes':188,'fc_params':[(512,0.1)]}"
+
+config=./data_pheno/JetClassII_v2/${PREFIX%%.*}.yaml
+DATADIR=/publicfs/cms/user/licq/datasets/JetClassII # ihep
+DATADIR=/home/olympus/licq/datasets/JetClassII
+trainset0p1_res2p=$(for i in $(seq -w 0000 0019); do echo -n "Res2P:${DATADIR}/Pythia/Res2P_$i.parquet "; done)
+trainset0p1_res34p=$(for i in $(seq -w 0000 0085); do echo -n "Res34P:${DATADIR}/Pythia/Res34P_$i.parquet "; done)
+trainset0p1_qcd=$(for i in $(seq -w 0000 0027); do echo -n "QCD:${DATADIR}/Pythia/QCD_$i.parquet "; done)
+
+NGPUS=1
+extselection="--extra-selection-train (ak.values_astype(np.tan(jet_energy)*100000,'int')%5==0) "
+trainvalopts="--run-mode train,val --num-workers 3 --fetch-step 1. --data-split-num 50 --log-file logs/${PREFIX}/train_val.log --data-train $trainset0p1_res2p $trainset0p1_res34p $trainset0p1_qcd --samples-per-epoch $((1000 * 1024 / $NGPUS))"
+
+source scripts/train_Sophon_v1.sh run 2 --batch-size 2048 --start-lr 6e-3 $modelopts $extselection $trainvalopts

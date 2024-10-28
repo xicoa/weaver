@@ -56,7 +56,7 @@ class ParticleTransformerSophonCLIPWrapper(torch.nn.Module):
         self.clip_mode = clip_kw['mode']
         self.clip_share_token = clip_kw['share_token']
 
-        assert self.clip_mode in ['clip-only', 'clip-with-cls', 'clip-finetune'], 'Invalid mode %s' % self.clip_mode
+        assert self.clip_mode in ['clip-only', 'clip-with-cls', 'clip-finetune', 'cls-only', 'gencls-only'], 'Invalid mode %s' % self.clip_mode
         if self.clip_mode in ['clip-only', 'clip-with-cls']:
 
             # remove FC in the model and use outer FC
@@ -80,7 +80,7 @@ class ParticleTransformerSophonCLIPWrapper(torch.nn.Module):
                 assert fc_params is not None, 'fc_params must be provided for clip-with-cls mode'
                 self.mod_fc = FFN(input_dim=kwargs['embed_dims'][-1], output_dim=kwargs['num_classes'], fc_params=fc_params, bias_last=True)
 
-        elif self.clip_mode == 'clip-finetune':
+        elif self.clip_mode in ['cls-only', 'clip-finetune']:
 
             self.mod = ParticleTransformer(**kwargs)
 
@@ -95,13 +95,15 @@ class ParticleTransformerSophonCLIPWrapper(torch.nn.Module):
                         init_model_state[k.replace('mod.', '', 1)] = v[:, 0:1]
                     else:
                         init_model_state[k.replace('mod.', '', 1)] = v
-                if k.startswith('mod_fc.'):
+                if k.startswith('mod_fc.') and clip_kw['init_opts'].get('load_fc', False):
                     # this only exists if the CLIP model is trained with clip-with-cls mode
                     init_model_state[k.replace('mod_fc.', '', 1)] = v
 
             missing, unexpected = self.mod.load_state_dict(init_model_state, strict=False)
             _logger.info('Loaded model state from %s: missing keys %s, unexpected keys %s' % (clip_kw['init_path'], missing, unexpected))
 
+        elif self.clip_mode in ['gencls-only']:
+            self.gen = ParticleTransformer(**gen_model_kw)
 
     @torch.jit.ignore
     def no_weight_decay(self):
@@ -135,12 +137,18 @@ class ParticleTransformerSophonCLIPWrapper(torch.nn.Module):
                 x_mod = self.mod_proj(x_mod)
                 x_gen = self.gen_proj(x_gen)
 
-        elif self.clip_mode == 'clip-finetune':
+        elif self.clip_mode in ['cls-only', 'clip-finetune']:
             points, features, lorentz_vectors, mask = args
             logits = self.mod(features, v=lorentz_vectors, mask=mask)
             x_mod = None
             x_gen = None
-        
+
+        elif self.clip_mode in ['gencls-only']:
+            gen_points, gen_features, gen_lorentz_vectors, gen_mask = args
+            logits = self.gen(gen_features, v=gen_lorentz_vectors, mask=gen_mask)
+            x_mod = None
+            x_gen = None
+
         return logits, x_mod, x_gen
 
 
@@ -193,7 +201,7 @@ def get_model(data_config, **kwargs):
 
     # default configurations
     cfg = dict(
-        input_dim=len(data_config.input_dicts['pf_features']),
+        input_dim=len(data_config.input_dicts.get('pf_features', [])),
         num_classes=None,
         # network configurations
         pair_input_dim=4,
@@ -242,6 +250,7 @@ def get_model(data_config, **kwargs):
         main_cont_fc_parmas=[],
         gen_cont_fc_parmas=[],
         init_path=None,
+        init_opts=dict(),
         beta=1., # loss weight for contrastive loss
     )
 
@@ -404,9 +413,30 @@ def evaluate_classification_sophon_clip(model, test_loader, dev, epoch, for_trai
                 y = {k: AllGather.apply(v.to(dev)) for k, v in y.items()}
                 label = y[data_config.label_names[0]].long().to(dev)
                 entry_count += label.shape[0]
-                logits, x_mod, x_gen = map(AllGather.apply, model(*inputs))
+                logits, x_mod, x_gen = model(*inputs)
                 if logits is not None:
+                    logits = AllGather.apply(logits)
                     scores.append(torch.softmax(logits.float(), dim=1).numpy(force=True))
+                if x_mod is not None:
+                    x_mod = AllGather.apply(x_mod)
+                    x_gen = AllGather.apply(x_gen)
+
+                # # optional: plot embeddings to tensorboard
+                # if tb_helper:
+                #     gen_feats = inputs[5].cpu().numpy()
+                #     gen_mask = inputs[7].cpu().numpy()
+                #     _utils = import_module(os.path.join(os.path.dirname(__file__), 'plot_utils.py'), 'plot_utils')
+                #     get_img_array = _utils.get_img_array
+                #     label_list = _utils.label_list
+                #     img_arrays = []
+                #     for i in tqdm.trange(gen_feats.shape[0]):
+                #         img_arrays.append(get_img_array(gen_feats[i], gen_mask[i]))
+                #     img_arrays = np.array(img_arrays)
+                #     tb_helper.writer.add_embedding(
+                #         x_gen.cpu(),
+                #         metadata=[label_list[val].replace('label_','') for val in label.cpu()],
+                #         label_img=torch.from_numpy(img_arrays) / 255.,
+                #     )
 
                 for k, v in y.items():
                     labels[k].append(v.numpy(force=True))

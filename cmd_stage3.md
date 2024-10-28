@@ -1183,7 +1183,7 @@ source scripts/train_GloParT_v3_origQCD.sh run 3 --network-config networks/examp
 source scripts/train_GloParT_v3_origQCD.sh dryrun 0 --network-config networks/example_ParticleTransformer2024PlusTagger_unified.py --batch-size 384 --start-lr 8e-4 $modelopts $testopts -->
 
 
-### beta 4: switched to UL samples -> card + bash script changes
+## beta 4: switched to UL samples -> card + bash script changes
 // card: QCD weight back to 1..
 
 // change samples:
@@ -1229,7 +1229,7 @@ source scripts/train_GloParT_v3beta4.sh dryrun 0 --batch-size 256 --start-lr 1e-
 extopts="--data-test onnxtest:/home/olympus/licq/hww/incl-train/weaver-core/weaver/output_numEvent100.root "
 source scripts/train_GloParT_v3beta4.sh dryrun 3 --batch-size 512 --start-lr 1e-3 $modelopts $testopts $extopts
 
-### beta 4a: back to 10 layers
+### beta 4.1: back to 10 layers
 // add -o num_layers 10
 // change as_resid_of to [1]
 
@@ -1238,14 +1238,88 @@ config=./data_new/inclv10/${PREFIX%%.*}.yaml
 
 modelopts="-o num_layers 10 -o reg_kw {'gamma':5.,'composed_split_reg':[True,False],'as_resid_of':[1]} "
 
-trainopts="--num-workers 3 --fetch-step 1. --data-split-group 320 " # on farm221
-valopts="--run-mode val --num-workers 20 --fetch-step 1. --data-split-group 125 --log-file logs/${PREFIX}/val.log "
+trainopts="--num-workers 3 --fetch-step 1. --data-split-num 320 " # on farm221
+valopts="--run-mode val --num-workers 10 --fetch-step 1. --data-split-num 125 --log-file logs/${PREFIX}/val.log "
 valextopts="-o eval_kw {'roc_kw':{'comp_list':[('Xbb','QCD'),('Xcc','QCD'),('Xcc','Xbb'),('XWW4q','QCD'),('XWW4q','TopbWhad'),('TopbWhad','QCD')],'label_inds_map':{'Xbb':[0],'Xcc':[1],'XWW4q':[50,51,52],'TopbWhad':[16,17,18,19,20,33,34,35,36,37],'QCD':[369,370,371,372,373]}}} "
-testopts="--run-mode test --num-workers 3 --data-split-group 1 -o label_cls_nodes $label_cls_nodes_v3beta3 " # fetch-by-file
+testopts="--run-mode test --num-workers 3 --data-split-num 1 -o label_cls_nodes $label_cls_nodes_v3beta3 " # fetch-by-file
 
 source scripts/train_GloParT_v3beta4.sh run 4,5,6,7 --batch-size 640 --start-lr 1.2e-3 $modelopts $trainopts --load-epoch 25
-source scripts/train_GloParT_v3beta4.sh run 3 --batch-size 640 --start-lr 1.2e-3 $modelopts $valopts $valextopts
-source scripts/train_GloParT_v3beta4.sh dryrun 3 --batch-size 512 --start-lr 1e-3 $modelopts $testopts
+source scripts/train_GloParT_v3beta4.sh run 2 --batch-size 640 --start-lr 1.2e-3 $modelopts $valopts $valextopts --load-epoch 70
+source scripts/train_GloParT_v3beta4.sh dryrun 2 --batch-size 512 --start-lr 1e-3 $modelopts $testopts
+
+// also testing epoch-96
+source scripts/train_GloParT_v3beta4.sh dryrun 3 --batch-size 512 --start-lr 1e-3 $modelopts $testopts --model-prefix model/${PREFIX}/net_epoch-96_state.pt
+
+// test onnx model
+config=./data_new/inclv10/${PREFIX%%.*}_inferonnxmodel.yaml
+extopts="--data-test onnxtest:/home/olympus/licq/hww/incl-train/weaver-core/weaver/output_numEvent100.root "
+source scripts/train_GloParT_v3beta4.sh dryrun 2 --batch-size 512 --start-lr 1e-4 $modelopts $testopts $extopts
+
+## beta 5: include UL18 QCD as well
+
+// split QCD UL18 datasets
+
+jobid=7283197 # for UL18
+qcddir=QCD_Pt_170to300_TuneCP5_13TeV_pythia8_UL18; mkdir $qcddir; cd $qcddir; for i in `seq 0 49`; do file="../QCD_Pt_170toInf_ptBinned_TuneCP5_13TeV_pythia8_UL18/dnnTuples_${jobid}-$i.root"; [[ -f $file ]] && ln -s $file .; done; cd -;
+qcddir=QCD_Pt_300to470_TuneCP5_13TeV_pythia8_UL18; mkdir $qcddir; cd $qcddir; for i in `seq 50 99`; do file="../QCD_Pt_170toInf_ptBinned_TuneCP5_13TeV_pythia8_UL18/dnnTuples_${jobid}-$i.root"; [[ -f $file ]] && ln -s $file .; done; cd -;
+qcddir=QCD_Pt_470to600_TuneCP5_13TeV_pythia8_UL18; mkdir $qcddir; cd $qcddir; for i in `seq 100 149`; do file="../QCD_Pt_170toInf_ptBinned_TuneCP5_13TeV_pythia8_UL18/dnnTuples_${jobid}-$i.root"; [[ -f $file ]] && ln -s $file .; done; cd -;
+qcddir=QCD_Pt_600to800_TuneCP5_13TeV_pythia8_UL18; mkdir $qcddir; cd $qcddir; for i in `seq 150 199`; do file="../QCD_Pt_170toInf_ptBinned_TuneCP5_13TeV_pythia8_UL18/dnnTuples_${jobid}-$i.root"; [[ -f $file ]] && ln -s $file .; done; cd -;
+qcddir=QCD_Pt_800to1000_TuneCP5_13TeV_pythia8_UL18; mkdir $qcddir; cd $qcddir; for i in `seq 200 249`; do file="../QCD_Pt_170toInf_ptBinned_TuneCP5_13TeV_pythia8_UL18/dnnTuples_${jobid}-$i.root"; [[ -f $file ]] && ln -s $file .; done; cd -;
+qcddir=QCD_Pt_1000to1400_TuneCP5_13TeV_pythia8_UL18; mkdir $qcddir; cd $qcddir; for i in `seq 250 299`; do file="../QCD_Pt_170toInf_ptBinned_TuneCP5_13TeV_pythia8_UL18/dnnTuples_${jobid}-$i.root"; [[ -f $file ]] && ln -s $file .; done; cd -;
+qcddir=QCD_Pt_1400to1800_TuneCP5_13TeV_pythia8_UL18; mkdir $qcddir; cd $qcddir; for i in `seq 300 349`; do file="../QCD_Pt_170toInf_ptBinned_TuneCP5_13TeV_pythia8_UL18/dnnTuples_${jobid}-$i.root"; [[ -f $file ]] && ln -s $file .; done; cd -;
+qcddir=QCD_Pt_1800to2400_TuneCP5_13TeV_pythia8_UL18; mkdir $qcddir; cd $qcddir; for i in `seq 350 399`; do file="../QCD_Pt_170toInf_ptBinned_TuneCP5_13TeV_pythia8_UL18/dnnTuples_${jobid}-$i.root"; [[ -f $file ]] && ln -s $file .; done; cd -;
+qcddir=QCD_Pt_2400to3200_TuneCP5_13TeV_pythia8_UL18; mkdir $qcddir; cd $qcddir; for i in `seq 400 449`; do file="../QCD_Pt_170toInf_ptBinned_TuneCP5_13TeV_pythia8_UL18/dnnTuples_${jobid}-$i.root"; [[ -f $file ]] && ln -s $file .; done; cd -;
+qcddir=QCD_Pt_3200toInf_TuneCP5_13TeV_pythia8_UL18; mkdir $qcddir; cd $qcddir; for i in `seq 450 486`; do file="../QCD_Pt_170toInf_ptBinned_TuneCP5_13TeV_pythia8_UL18/dnnTuples_${jobid}-$i.root"; [[ -f $file ]] && ln -s $file .; done; cd -;
+
+// training
+// change to default in script: -o num_layers 10 -o reg_kw {'gamma':5.,'composed_split_reg':[True,False],'as_resid_of':[1]} 
+
+
+PREFIX=ak8_MD_inclv10beta5_ul.std.ddp4-bs800-lr1p4e-3.farm221 # 4GPU
+config=./data_new/inclv10/${PREFIX%%.*}.yaml
+
+modelopts=""
+
+trainopts="--num-workers 3 --fetch-step 1. --data-split-num 320 " # on farm221
+valopts="--run-mode val --num-workers 10 --fetch-step 1. --data-split-num 125 --log-file logs/${PREFIX}/val.log "
+valextopts="-o eval_kw {'roc_kw':{'comp_list':[('Xbb','QCD'),('Xcc','QCD'),('Xcc','Xbb'),('XWW4q','QCD'),('XWW4q','TopbWhad'),('TopbWhad','QCD')],'label_inds_map':{'Xbb':[0],'Xcc':[1],'XWW4q':[50,51,52],'TopbWhad':[16,17,18,19,20,33,34,35,36,37],'QCD':[369,370,371,372,373]}}} "
+testopts="--run-mode test --num-workers 3 --data-split-num 1 -o label_cls_nodes $label_cls_nodes_v3beta3 " # fetch-by-file
+
+
+source scripts/train_GloParT_v3beta5.sh run 4,5,6,7 --batch-size 800 --start-lr 1.4e-3 $modelopts $trainopts
+source scripts/train_GloParT_v3beta5.sh run 3 --batch-size 800 --start-lr 1.4e-3 $modelopts $valopts $valextopts
+source scripts/train_GloParT_v3beta5.sh dryrun 3 --batch-size 512 --start-lr 1e-3 $modelopts $testopts
+
+## v3 beta 5 plus: larger model
+
+PREFIX=ak8_MD_inclv10beta5_ul.modelplus.ddp4-bs500-lr1e-3.farm221 # 4GPU
+config=./data_new/inclv10/${PREFIX%%.*}.yaml
+modelopts="-o embed_dims [512,512,512] -o num_layers 12 "
+batchopts="--batch-size 500 --start-lr 1e-3 --num-epoch 150 "
+
+// not finished:
+PREFIX=ak8_MD_inclv10beta5_ul.modelplus.pairemb128.ddp4-bs400-lr0p85e-3.farm221 # 4GPU
+config=./data_new/inclv10/${PREFIX%%.*}.yaml
+modelopts="-o embed_dims [512,512,512] -o pair_embed_dims [128,128,128] -o num_layers 12 "
+batchopts="--batch-size 400 --start-lr 0.85e-3 "
+
+// not finished:
+PREFIX=ak8_MD_inclv10beta5_ul.modelplus.nlayer10.ddp4-bs512-lr1e-3.farm221 # 4GPU
+config=./data_new/inclv10/${PREFIX%%.*}.yaml
+modelopts="-o embed_dims [512,512,512] "
+batchopts="--batch-size 512 --start-lr 1e-3 "
+
+trainopts="--num-workers 3 --fetch-step 1. --data-split-num 320 " # on farm221
+valopts="--run-mode val --num-workers 10 --fetch-step 1. --data-split-num 125 --log-file logs/${PREFIX}/val.log "
+valextopts="-o eval_kw {'roc_kw':{'comp_list':[('Xbb','QCD'),('Xcc','QCD'),('Xcc','Xbb'),('XWW4q','QCD'),('XWW4q','TopbWhad'),('TopbWhad','QCD')],'label_inds_map':{'Xbb':[0],'Xcc':[1],'XWW4q':[50,51,52],'TopbWhad':[16,17,18,19,20,33,34,35,36,37],'QCD':[369,370,371,372,373]}}} "
+testopts="--run-mode test --num-workers 3 --data-split-num 1 -o label_cls_nodes $label_cls_nodes_v3beta3 " # fetch-by-file
+
+source scripts/train_GloParT_v3beta5.sh run 0,1,3,4 $batchopts $modelopts $trainopts --load-epoch 60
+source scripts/train_GloParT_v3beta5.sh run 3 --batch-size 512 --start-lr 1e-3 $modelopts $valopts $valextopts
+source scripts/train_GloParT_v3beta5.sh dryrun 3 --batch-size 512 --start-lr 1e-3 $modelopts $testopts
+
+// for test training
+source scripts/train_GloParT_v3beta5.sh dryrun 0 --batch-size 500 --start-lr 1.4e-3 $modelopts $trainopts --data-train ./datasets/20240909_ak8_UL17_PUPPIv18_v10/BulkGravitonToHHTo4QGluLTau_MX-600to6000_MH-15to250/*0[01].root --data-split-num 10 --num-workers 1
 
 
 ========================================================================================================
@@ -1566,3 +1640,27 @@ testopts="--run-mode test --num-workers 3 --data-split-group 1 " # fetch-by-file
 
 source scripts/aux/train_GloParT_v3beta4_nonMD.sh run 7 --batch-size 512 --start-lr 2e-2 $extdataopts $modelopts $modelftopts $trainopts
 source scripts/aux/train_GloParT_v3beta4_nonMD.sh dryrun 2 --batch-size 512 --start-lr 2e-2 $extdataopts $modelopts $modelftopts $testopts
+
+## 24.10.12 for final model..
+
+### non-MD
+
+PREFIX=ak8_MD_inclv10_nonmd_witheta_manual.lr2e-2.fixdataloader.origmodel.ak8_MD_inclv10beta4_ul_manual.nlayer10.vispart_as_resid.ddp4-bs640-lr1p2e-3.nepoch100.farm221
+modelftopts="-o finetune_kw {'mode':'cls','target_inds':[16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,7,3,0,1,2,3,369,370,371,372,373],'num_ft_nodes':28,'fc_params':[(256,0.),(256,0.)]} \
+--load-model-weights finetune_stage3beta4p1 --freeze-model-weights main* \
+--train-mode cls --num-epochs 30 "
+
+config=./data_new/inclv10_aux/${PREFIX%%.*}.yaml
+modelopts="-o num_layers 10 -o reg_kw {'gamma':5.,'composed_split_reg':[True,False],'as_resid_of':[1]} " # beta 4.1's config
+trainopts="--run-mode train --num-workers 16 --fetch-step 0.01 --data-split-num 1 --samples-per-epoch-val $((1000 * 512)) "
+valopts="--run-mode val --num-workers 16 --fetch-step 0.01 --data-split-num 1 --samples-per-epoch-val $((1000 * 512)) --log-file logs/${PREFIX}/val.log "
+testopts="--run-mode test --num-workers 3 --data-split-num 1 " # fetch-by-file
+
+source scripts/aux/train_GloParT_v3beta4_nonMD.sh run 2 --batch-size 512 --start-lr 2e-2 $modelopts $modelftopts $trainopts
+source scripts/aux/train_GloParT_v3beta4_nonMD.sh run 2 --batch-size 512 --start-lr 2e-2 $modelopts $modelftopts $valopts
+source scripts/aux/train_GloParT_v3beta4_nonMD.sh dryrun 2 --batch-size 512 --start-lr 2e-2 $modelopts $modelftopts $testopts
+
+// test onnx model
+config=./data_new/inclv10_aux/${PREFIX%%.*}_inferonnxmodel.yaml
+extopts="--data-test onnxtest:/home/olympus/licq/hww/incl-train/weaver-core/weaver/output_numEvent100.root "
+source scripts/aux/train_GloParT_v3beta4_nonMD.sh dryrun 2 --batch-size 512 --start-lr 2e-2 $modelopts $modelftopts $testopts $extopts

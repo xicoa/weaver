@@ -929,10 +929,11 @@ class ParticleTransformer(nn.Module):
             output = self.fc(x_cls)
             if self.for_inference:
                 # softmax for the classification output logits
-                num_cls = self.export_params.get('num_cls', output.size(1))
-                output_cls, output_rest = output.split([num_cls, output.size(1) - num_cls], dim=1)
-                output_cls = torch.softmax(output_cls, dim=1)
-                output = torch.cat([output_cls, output_rest], dim=-1)
+                if self.export_params.get('apply_softmax', True):
+                    num_cls = self.export_params.get('num_cls', output.size(1))
+                    output_cls, output_rest = output.split([num_cls, output.size(1) - num_cls], dim=1)
+                    output_cls = torch.softmax(output_cls, dim=1)
+                    output = torch.cat([output_cls, output_rest], dim=-1)
 
                 if self.export_params.get('concat_hid', False):
                     output = torch.cat([output, x_cls], dim=-1)
