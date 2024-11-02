@@ -1038,7 +1038,10 @@ def _main(args):
                         _logger.info('Waiting for model %s to be ready...' % (args.model_prefix + '_epoch-%d_state.pt' % epoch))
                         time.sleep(10)
                     time.sleep(10)
-                    model.load_state_dict(torch.load(args.model_prefix + '_epoch-%d_state.pt' % epoch, map_location=dev))
+                    if isinstance(model, (torch.nn.DataParallel, torch.nn.parallel.DistributedDataParallel)):
+                        model.module.load_state_dict(torch.load(args.model_prefix + '_epoch-%d_state.pt' % epoch, map_location=dev))
+                    else:
+                        model.load_state_dict(torch.load(args.model_prefix + '_epoch-%d_state.pt' % epoch, map_location=dev))
 
                 valid_metric = evaluate(model, val_loader, dev, epoch, loss_func=loss_func,
                                         steps_per_epoch=args.steps_per_epoch_val, tb_helper=tb)
