@@ -1253,6 +1253,7 @@ source scripts/train_GloParT_v3beta4.sh dryrun 3 --batch-size 512 --start-lr 1e-
 // test onnx model
 config=./data_new/inclv10/${PREFIX%%.*}_inferonnxmodel.yaml
 extopts="--data-test onnxtest:/home/olympus/licq/hww/incl-train/weaver-core/weaver/output_numEvent100.root "
+extopts="--data-test onnxtest_fixlts:/home/olympus/licq/hww/incl-train/weaver-core/weaver/output_numEvent500_fixlts.root "
 source scripts/train_GloParT_v3beta4.sh dryrun 2 --batch-size 512 --start-lr 1e-4 $modelopts $testopts $extopts
 
 ## beta 5: include UL18 QCD as well

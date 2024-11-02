@@ -2470,3 +2470,19 @@ extselection="--extra-selection-train (ak.values_astype(np.tan(jet_energy)*10000
 trainvalopts="--run-mode train,val --num-workers 3 --fetch-step 1. --data-split-num 50 --log-file logs/${PREFIX}/train_val.log --data-train $trainset0p1_res2p $trainset0p1_res34p $trainset0p1_qcd --samples-per-epoch $((1000 * 1024 / $NGPUS))"
 
 source scripts/train_Sophon_v1.sh run 2 --batch-size 2048 --start-lr 6e-3 $modelopts $extselection $trainvalopts
+
+## reproduce ParT on JC1
+// bsz x4, lr x 3
+
+DATADIR=/mldata/hqu/datasets/JetClass
+DATADIR=/cefs/higgs/wangshudong/data/JetClass # ihep
+
+PREFIX=JetClass_full.std.ddp4-bs2048-lr1p2e-2
+config=./data_pheno/JetClass/${PREFIX%%.*}.yaml
+
+modelopts=" "
+trainvalopts="--run-mode train,val --num-workers 2 --fetch-step 1. --data-split-num 200 --log-file logs/${PREFIX}/train_val.log "
+trainvalopts="--run-mode val --num-workers 2 --fetch-step 1. --data-split-num 200 --log-file logs/${PREFIX}/val.log "
+
+source scripts/train_ParT_JC1.sh run 0,1,2,3 --batch-size 2048 --start-lr 1.2e-2 $modelopts $trainvalopts
+source scripts/train_ParT_JC1.sh dryrun 0 --batch-size 512 --start-lr 1.2e-2 $modelopts $trainvalopts
