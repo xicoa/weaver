@@ -1295,8 +1295,13 @@ source scripts/train_GloParT_v3beta5.sh dryrun 3 --batch-size 512 --start-lr 1e-
 
 PREFIX=ak8_MD_inclv10beta5_ul.modelplus.ddp4-bs500-lr1e-3.farm221 # 4GPU
 config=./data_new/inclv10/${PREFIX%%.*}.yaml
-modelopts="-o embed_dims [512,512,512] -o num_layers 12 "
-batchopts="--batch-size 500 --start-lr 1e-3 --num-epoch 150 "
+modelopts="-o embed_dims [512,512,512] -o num_layers 12 --num-epoch 150 "
+batchopts="--batch-size 500 --start-lr 1e-3 "
+
+PREFIX=ak8_MD_inclv10beta5_ul.modelplus.nepoch200.ddp4-bs500-lr1e-3.farm221
+config=./data_new/inclv10/${PREFIX%%.*}.yaml
+modelopts="-o embed_dims [512,512,512] -o num_layers 12 --num-epoch 200 "
+batchopts="--batch-size 500 --start-lr 1e-3 "
 
 // not finished:
 PREFIX=ak8_MD_inclv10beta5_ul.modelplus.pairemb128.ddp4-bs400-lr0p85e-3.farm221 # 4GPU
@@ -1310,12 +1315,18 @@ config=./data_new/inclv10/${PREFIX%%.*}.yaml
 modelopts="-o embed_dims [512,512,512] "
 batchopts="--batch-size 512 --start-lr 1e-3 "
 
+PREFIX=ak8_MD_inclv10beta5_ul.modelplus.fc3072.ddp4-bs500-lr1e-3.farm221 # 4GPU
+config=./data_new/inclv10/${PREFIX%%.*}.yaml
+modelopts="-o embed_dims [512,512,512] -o num_layers 12 -o fc_params [(3072,0.1)] --num-epoch 150 "
+batchopts="--batch-size 400 --start-lr 0.85e-3 "
+
 trainopts="--num-workers 3 --fetch-step 1. --data-split-num 320 " # on farm221
 valopts="--run-mode val --num-workers 10 --fetch-step 1. --data-split-num 125 --log-file logs/${PREFIX}/val.log "
 valextopts="-o eval_kw {'roc_kw':{'comp_list':[('Xbb','QCD'),('Xcc','QCD'),('Xcc','Xbb'),('XWW4q','QCD'),('XWW4q','TopbWhad'),('TopbWhad','QCD')],'label_inds_map':{'Xbb':[0],'Xcc':[1],'XWW4q':[50,51,52],'TopbWhad':[16,17,18,19,20,33,34,35,36,37],'QCD':[369,370,371,372,373]}}} "
 testopts="--run-mode test --num-workers 3 --data-split-num 1 -o label_cls_nodes $label_cls_nodes_v3beta3 " # fetch-by-file
 
 source scripts/train_GloParT_v3beta5.sh run 0,1,3,4 $batchopts $modelopts $trainopts --load-epoch 60
+source scripts/train_GloParT_v3beta5.sh run 0,1,3,4 $batchopts $modelopts $trainopts
 source scripts/train_GloParT_v3beta5.sh run 3 --batch-size 512 --start-lr 1e-3 $modelopts $valopts $valextopts
 source scripts/train_GloParT_v3beta5.sh dryrun 3 --batch-size 512 --start-lr 1e-3 $modelopts $testopts
 

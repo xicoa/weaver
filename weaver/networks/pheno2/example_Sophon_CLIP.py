@@ -56,17 +56,20 @@ class ParticleTransformerSophonCLIPWrapper(torch.nn.Module):
         self.clip_mode = clip_kw['mode']
         self.clip_share_token = clip_kw['share_token']
 
-        assert self.clip_mode in ['clip-only', 'clip-with-cls', 'clip-finetune', 'cls-only', 'gencls-only'], 'Invalid mode %s' % self.clip_mode
-        if self.clip_mode in ['clip-only', 'clip-with-cls']:
+        assert self.clip_mode in ['clip-only', 'clip-with-cls', 'clip-with-gencls', 'clip-finetune', 'cls-only', 'gencls-only'], 'Invalid mode %s' % self.clip_mode
+        if self.clip_mode in ['clip-only', 'clip-with-cls', 'clip-with-gencls']:
 
             # remove FC in the model and use outer FC
             fc_params = kwargs.get('fc_params', None)
+            gen_fc_params = gen_model_kw.get('fc_params', None)
             kwargs['fc_params'] = None
             gen_model_kw['fc_params'] = None
 
             # use a second class token in the main model if share_token is False
             if self.clip_mode == 'clip-with-cls' and not self.clip_share_token:
                 kwargs['num_cls_tokens'] = 2
+            if self.clip_mode == 'clip-with-gencls' and not self.clip_share_token:
+                gen_model_kw['num_cls_tokens'] = 2
 
             # initialize model
             self.mod = ParticleTransformer(**kwargs)
@@ -79,6 +82,9 @@ class ParticleTransformerSophonCLIPWrapper(torch.nn.Module):
                 # also define FC for classification
                 assert fc_params is not None, 'fc_params must be provided for clip-with-cls mode'
                 self.mod_fc = FFN(input_dim=kwargs['embed_dims'][-1], output_dim=kwargs['num_classes'], fc_params=fc_params, bias_last=True)
+            if self.clip_mode == 'clip-with-gencls':
+                assert fc_params is not None, 'fc_params must be provided in "gen_model_kw" for clip-with-gencls mode'
+                self.gen_fc = FFN(input_dim=gen_model_kw['embed_dims'][-1], output_dim=kwargs['num_classes'], fc_params=gen_fc_params, bias_last=True)
 
         elif self.clip_mode in ['cls-only', 'clip-finetune']:
 
@@ -110,9 +116,22 @@ class ParticleTransformerSophonCLIPWrapper(torch.nn.Module):
         return {'mod.cls_token', 'gen.cls_token'}
 
     def forward(self, *args):
+        '''
+            args: a list of inputs, provided by the YAML card. should be:
+              - points, features, lorentz_vectors, mask, gen_points, gen_features, gen_lorentz_vectors, gen_mask (for clip-only, clip-with-cls, clip-with-gencls)
+              - points, features, lorentz_vectors, mask (for cls-only and clip-finetune)
+              - gen_points, gen_features, gen_lorentz_vectors, gen_mask (for gencls-only)
+            Output: logits, x_mod, x_gen
+              - logits: (batch, num_classes), the output logits of 
+                  1. main ParT if the mode has cls (clip-with-cls, cls-only, clip-finetune)
+                  2. gen ParT if the mode has gencls (gencls-only)
+                  3. None if the mode is clip-only
+              - x_mod: (batch, proj_dim), the latent features of main ParT to compute contrastive loss
+              - x_gen: (batch, proj_dim), the latent features of gen ParT to compute contrastive loss
+        '''
         # return self.mod(features, v=lorentz_vectors, mask=mask) # not using the default foward implementation. Should add emport_embed flag
 
-        if self.clip_mode in ['clip-only', 'clip-with-cls']:
+        if self.clip_mode in ['clip-only', 'clip-with-cls', 'clip-with-gencls']:
             points, features, lorentz_vectors, mask, gen_points, gen_features, gen_lorentz_vectors, gen_mask = args
             x_mod = self.mod(features, v=lorentz_vectors, mask=mask) # class token output
             x_gen = self.gen(gen_features, v=gen_lorentz_vectors, mask=gen_mask) # class token output
@@ -121,7 +140,7 @@ class ParticleTransformerSophonCLIPWrapper(torch.nn.Module):
             if self.clip_mode == 'clip-with-cls':
                 if not self.clip_share_token:
                     # separate class tokens for classification and CLIP contrastive loss
-                    assert x_mod.shape[1] == 2, 'Invalid shape %s' % str(x_mod.shape) # dim: (bsz, 2, dim)
+                    assert len(x_mod.shape) == 3 and x_mod.shape[1] == 2, 'Invalid shape %s' % str(x_mod.shape) # dim: (bsz, 2, dim)
                     logits = self.mod_fc(x_mod[:, 0])
                     x_mod = self.mod_proj(x_mod[:, 1])
                     x_gen = self.gen_proj(x_gen)
@@ -129,6 +148,20 @@ class ParticleTransformerSophonCLIPWrapper(torch.nn.Module):
                     # use a shared class token for both classification and CLIP contrastive loss
                     assert len(x_mod.shape) == 2, 'Invalid shape %s' % str(x_mod.shape) # dim: (bsz, dim)
                     logits = self.mod_fc(x_mod)
+                    x_mod = self.mod_proj(x_mod)
+                    x_gen = self.gen_proj(x_gen)
+            
+            elif self.clip_mode == 'clip-with-gencls':
+                if not self.clip_share_token:
+                    # separate class tokens for classification and CLIP contrastive loss
+                    assert len(x_gen.shape) == 3 and x_gen.shape[1] == 2, 'Invalid shape %s' % str(x_gen.shape) # dim: (bsz, 2, dim)
+                    logits = self.gen_fc(x_gen[:, 0])
+                    x_mod = self.mod_proj(x_mod)
+                    x_gen = self.gen_proj(x_gen[:, 1])
+                else:
+                    # use a shared class token for both classification and CLIP contrastive loss
+                    assert len(x_gen.shape) == 2, 'Invalid shape %s' % str(x_gen.shape) # dim: (bsz, dim)
+                    logits = self.gen_fc(x_gen)
                     x_mod = self.mod_proj(x_mod)
                     x_gen = self.gen_proj(x_gen)
 
@@ -161,7 +194,7 @@ class CLIPLoss(torch.nn.Module):
         super().__init__()
         self.clip_mode = clip_mode
         self.beta = beta
-        if clip_mode in ['clip-only', 'clip-with-cls']:
+        if clip_mode in ['clip-only', 'clip-with-cls', 'clip-with-gencls']:
             self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
 
     def forward(self, logits, x_mod, x_gen, labels):
@@ -194,7 +227,7 @@ class CLIPLoss(torch.nn.Module):
             loss_cont = torch.tensor(0., device=labels.device)
 
         loss = loss_cls + self.beta * loss_cont
-        return loss, {'loss_cls': loss_cls.detach().item(), 'loss_cont': loss_cont.detach().item()}
+        return loss, loss_cls, loss_cont
 
 
 def get_model(data_config, **kwargs):
@@ -318,7 +351,7 @@ def train_classification_sophon_clip(
             opt.zero_grad()
             with torch.cuda.amp.autocast(enabled=grad_scaler is not None):
                 logits, x_mod, x_gen = model(*inputs)
-                loss, loss_dict = loss_func(logits, x_mod, x_gen, label)
+                loss, loss_cls, loss_cont = loss_func(logits, x_mod, x_gen, label)
             if grad_scaler is None:
                 loss.backward()
                 opt.step()
@@ -331,18 +364,20 @@ def train_classification_sophon_clip(
                 scheduler.step()
 
             loss = loss.item()
+            loss_cls = loss_cls.item()
+            loss_cont = loss_cont.item()
 
             num_examples = label.shape[0]
             label_counter.update(label.numpy(force=True))
             num_batches += 1
             count += num_examples
             total_loss += loss
-            total_loss_cls += loss_dict['loss_cls']
-            total_loss_cont += loss_dict['loss_cont']
+            total_loss_cls += loss_cls
+            total_loss_cont += loss_cont
             tq_dict = {
                 'lr': '%.2e' % scheduler.get_last_lr()[0] if scheduler else opt.defaults['lr'],
-                'LossCls': '%.5f' % loss_dict['loss_cls'],
-                'LossCont': '%.5f' % loss_dict['loss_cont'],
+                'LossCls': '%.5f' % loss_cls,
+                'LossCont': '%.5f' % loss_cont,
                 'Loss': '%.5f' % loss,
                 'AvgLoss': '%.5f' % (total_loss / num_batches),
             }
@@ -410,34 +445,22 @@ def evaluate_classification_sophon_clip(model, test_loader, dev, epoch, for_trai
             for X, y, Z in tq:
                 # X, y: torch.Tensor; Z: ak.Array
                 inputs = [X[k].to(dev) for k in data_config.input_names]
-                y = {k: AllGather.apply(v.to(dev)) for k, v in y.items()}
                 label = y[data_config.label_names[0]].long().to(dev)
                 entry_count += label.shape[0]
                 logits, x_mod, x_gen = model(*inputs)
+                loss, loss_cls, loss_cont = loss_func(logits, x_mod, x_gen, label)
+
+                # all-reduce the loss
+                loss = AllGather.apply(loss.unsqueeze(0)).mean().item()
+                loss_cls = AllGather.apply(loss_cls.unsqueeze(0)).mean().item()
+                loss_cont = AllGather.apply(loss_cont.unsqueeze(0)).mean().item()
+
+                # all-gather the scores and labels
                 if logits is not None:
                     logits = AllGather.apply(logits)
                     scores.append(torch.softmax(logits.float(), dim=1).numpy(force=True))
-                if x_mod is not None:
-                    x_mod = AllGather.apply(x_mod)
-                    x_gen = AllGather.apply(x_gen)
-
-                # # optional: plot embeddings to tensorboard
-                # if tb_helper:
-                #     gen_feats = inputs[5].cpu().numpy()
-                #     gen_mask = inputs[7].cpu().numpy()
-                #     _utils = import_module(os.path.join(os.path.dirname(__file__), 'plot_utils.py'), 'plot_utils')
-                #     get_img_array = _utils.get_img_array
-                #     label_list = _utils.label_list
-                #     img_arrays = []
-                #     for i in tqdm.trange(gen_feats.shape[0]):
-                #         img_arrays.append(get_img_array(gen_feats[i], gen_mask[i]))
-                #     img_arrays = np.array(img_arrays)
-                #     tb_helper.writer.add_embedding(
-                #         x_gen.cpu(),
-                #         metadata=[label_list[val].replace('label_','') for val in label.cpu()],
-                #         label_img=torch.from_numpy(img_arrays) / 255.,
-                #     )
-
+                y = {k: AllGather.apply(v.to(dev)) for k, v in y.items()}
+                label = y[data_config.label_names[0]].long().to(dev) # gathered label
                 for k, v in y.items():
                     labels[k].append(v.numpy(force=True))
                 if not for_training:
@@ -447,17 +470,14 @@ def evaluate_classification_sophon_clip(model, test_loader, dev, epoch, for_trai
                 num_examples = label.shape[0]
                 label_counter.update(label.numpy(force=True))
 
-                loss, loss_dict = loss_func(logits, x_mod, x_gen, label)
-                loss = loss.item()
-
                 num_batches += 1
                 count += num_examples
                 total_loss += loss * num_examples
-                total_loss_cls += loss_dict['loss_cls'] * num_examples
-                total_loss_cont += loss_dict['loss_cont'] * num_examples
+                total_loss_cls += loss_cls * num_examples
+                total_loss_cont += loss_cont * num_examples
                 tq_dict = {
-                    'LossCls': '%.5f' % loss_dict['loss_cls'],
-                    'LossCont': '%.5f' % loss_dict['loss_cont'],
+                    'LossCls': '%.5f' % loss_cls,
+                    'LossCont': '%.5f' % loss_cont,
                     'Loss': '%.5f' % loss,
                     'AvgLoss': '%.5f' % (total_loss / count),
                 }

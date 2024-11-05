@@ -189,7 +189,7 @@ def to_filelist(args, mode='train'):
         file_dict[name] = sorted(files)
 
     if args.local_rank is not None:
-        if mode == 'train':
+        if mode == 'train' or mode == 'val':
             local_world_size = int(os.environ['LOCAL_WORLD_SIZE'])
             new_file_dict = {}
             for name, files in file_dict.items():

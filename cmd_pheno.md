@@ -2375,6 +2375,8 @@ extselection="--extra-selection (ak.values_astype(np.tan(jet_energy)*100000,'int
 trainvalopts="--run-mode train,val --num-workers 3 --fetch-step 1. --data-split-num 50 --log-file logs/${PREFIX}/train_val.log --data-train $trainset0p1_res2p $trainset0p1_res34p $trainset0p1_qcd --samples-per-epoch $((1000 * 1024 / $NGPUS))"
 
 source scripts/train_Sophon_v1.sh run 0,2 --batch-size 1024 --start-lr 6e-3 $modelopts $extselection $trainvalopts
+=== this is for test ===
+source scripts/train_Sophon_v1.sh run 0,1 --batch-size 1024 --start-lr 6e-3 $modelopts $extselection $trainvalopts --data-train Res2P:${DATADIR}/Pythia/Res2P_0000.parquet Res2P:${DATADIR}/Pythia/Res2P_0001.parquet --data-val Res2P:${DATADIR}/Pythia/Res2P_0002.parquet Res2P:${DATADIR}/Pythia/Res2P_0003.parquet --num-workers 1 --samples-per-epoch $((20 * 1024))" --samples-per-epoch-val $((20 * 1024))" --data-split-num 1
 
 ### formal runs on zeus
 
@@ -2453,7 +2455,7 @@ valopts="--run-mode val --num-workers 4 --fetch-step 1. --data-split-num 50 --da
 
 source scripts/train_Sophon_v1.sh run 2 --batch-size 2048 --start-lr 6e-3 $modelopts $extselection $valopts --num-epoch 160 --load-epoch 143 --samples-per-epoch-val 2048
 
-## CLIP but gencls-only first
+### CLIP but gencls-only first
 
 PREFIX=JetClassII_full_gencls_nonscale_manual.data0p1.gencls-only.ddp4-bs2048-lr6e-3
 modelopts="--network-config networks/pheno2/example_Sophon_CLIP.py -o clip_kw {'mode':'gencls-only','beta':0} -o gen_model_kw {'num_classes':188,'fc_params':[(512,0.1)]}"
@@ -2471,6 +2473,26 @@ trainvalopts="--run-mode train,val --num-workers 3 --fetch-step 1. --data-split-
 
 source scripts/train_Sophon_v1.sh run 2 --batch-size 2048 --start-lr 6e-3 $modelopts $extselection $trainvalopts
 
+### 24.11.06 CLIP with gencls
+
+PREFIX=JetClassII_full_CLIP_nonscale_manual.data0p1.clip-with-gencls.share_token.beta1.ddp4-bs2048-lr6e-3
+modelopts="--network-config networks/pheno2/example_Sophon_CLIP.py -o clip_kw {'mode':'clip-with-gencls','share_token':True,'main_cont_fc_parmas':[(512,0.1)],'beta':1.} -o gen_model_kw {'fc_params':[(512,0.1)]}" # use single class token
+
+config=./data_pheno/JetClassII_v2/${PREFIX%%.*}.yaml
+DATADIR=/publicfs/cms/user/licq/datasets/JetClassII # ihep
+DATADIR=/home/olympus/licq/datasets/JetClassII
+trainset0p1_res2p=$(for i in $(seq -w 0000 0019); do echo -n "Res2P:${DATADIR}/Pythia/Res2P_$i.parquet "; done)
+trainset0p1_res34p=$(for i in $(seq -w 0000 0085); do echo -n "Res34P:${DATADIR}/Pythia/Res34P_$i.parquet "; done)
+trainset0p1_qcd=$(for i in $(seq -w 0000 0027); do echo -n "QCD:${DATADIR}/Pythia/QCD_$i.parquet "; done)
+
+NGPUS=4
+extselection="--extra-selection-train (ak.values_astype(np.tan(jet_energy)*100000,'int')%5==0) "
+trainvalopts="--run-mode train,val --num-workers 3 --fetch-step 1. --data-split-num 50 --log-file logs/${PREFIX}/train_val.log --data-train $trainset0p1_res2p $trainset0p1_res34p $trainset0p1_qcd --samples-per-epoch $((1000 * 1024 / $NGPUS))"
+
+source scripts/train_Sophon_v1.sh run 0,1,2,3 --batch-size 2048 --start-lr 6e-3 $modelopts $extselection $trainvalopts
+=== this is for test ===
+source scripts/train_Sophon_v1.sh dryrun 0 --batch-size 512 --start-lr 6e-3 $modelopts $extselection $trainvalopts --data-train Res2P:${DATADIR}/Pythia/Res2P_0000.parquet Res2P:${DATADIR}/Pythia/Res2P_0001.parquet --data-val Res2P:${DATADIR}/Pythia/Res2P_0002.parquet Res2P:${DATADIR}/Pythia/Res2P_0003.parquet --num-workers 1 --samples-per-epoch $((20 * 1024))" --samples-per-epoch-val $((20 * 1024))" --data-split-num 1
+
 ## reproduce ParT on JC1
 // bsz x4, lr x 3
 
@@ -2486,3 +2508,15 @@ trainvalopts="--run-mode val --num-workers 2 --fetch-step 1. --data-split-num 20
 
 source scripts/train_ParT_JC1.sh run 0,1,2,3 --batch-size 2048 --start-lr 1.2e-2 $modelopts $trainvalopts
 source scripts/train_ParT_JC1.sh dryrun 0 --batch-size 512 --start-lr 1.2e-2 $modelopts $trainvalopts
+
+### ParTv2 (with SwiGLU)
+PREFIX=JetClass_full.v2.ddp4-bs2048-lr1p2e-2
+PREFIX=JetClass_full.v2.nepoch35.ddp4-bs2048-lr1p2e-2 # continue from epoch=23
+config=./data_pheno/JetClass/${PREFIX%%.*}.yaml
+
+modelopts="-o version 2 "
+trainvalopts="--run-mode train,val --num-workers 2 --fetch-step 1. --data-split-num 200 --log-file logs/${PREFIX}/train_val.log "
+
+source scripts/train_ParT_JC1.sh run 0,1,2,3 --batch-size 2048 --start-lr 1.2e-2 $modelopts $trainvalopt
+source scripts/train_ParT_JC1.sh dryrun 0 --batch-size 512 --start-lr 1.2e-2 $modelopts $trainvalopts
+
