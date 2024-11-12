@@ -17,7 +17,7 @@ if [[ "$current_dir" != *"weaver-core/weaver" ]]; then
     exit 1
 fi
 
-ARG="--network-config networks/pheno2/example_ParticleTransformer.py \
+ARG="--network-config networks/pheno2/example_ParticleTransformer_JC1.py \
 --use-amp --batch-size 512 --start-lr 1e-3 --samples-per-epoch $((10000 * 1024 / $NGPUS)) --samples-per-epoch-val $((10000 * 128 / $NGPUS)) --num-epochs 50 --optimizer ranger \
 --num-workers 2 --fetch-step 1.0 --data-split-num 200 \
 --data-train \
