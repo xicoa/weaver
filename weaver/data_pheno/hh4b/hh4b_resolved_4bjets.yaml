@@ -4,10 +4,10 @@
 #   2) for all reco AK4 jets with p_T > 30 and |eta| < 2.5, require at least 4 passing btag-discr > 0.297 (MP)
 selection: >-
    (ak.sum(jet_sophonAK4_probB[np.abs(jet_eta) < 2.5][:, :4] > 0.0557, axis=1) >= 3) & 
-   (jet_sophonAK4_probB[ak.argsort(jet_sophonAK4_probB[(jet_pt > 30.) & (np.abs(jet_eta) < 2.5)], axis=1, ascending=False)[:, 3:4]][:, 0] > 0.297)
+   (ak.fill_none(ak.firsts(jet_sophonAK4_probB[ak.argsort(jet_sophonAK4_probB[(jet_pt > 30) & (np.abs(jet_eta) < 2.5)], axis=1, ascending=False)][:, 3:4]), 0) > 0.297)
 
-test_time_selection: >-
-   (gen_dihiggs_mass > -1)
+# test_time_selection: >-
+#    (gen_dihiggs_mass > -1)
 
 new_variables:
    ### [format] name: formula

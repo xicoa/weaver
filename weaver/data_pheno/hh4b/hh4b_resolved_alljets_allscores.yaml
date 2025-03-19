@@ -4,8 +4,8 @@
 selection: >-
    (ak.sum(jet_sophonAK4_probB[np.abs(jet_eta) < 2.5][:, :4] > 0.0557, axis=1) >= 3)
 
-test_time_selection: >-
-   (gen_dihiggs_mass > -1)
+# test_time_selection: >-
+#    (gen_dihiggs_mass > -1)
 
 new_variables:
    ### [format] name: formula
