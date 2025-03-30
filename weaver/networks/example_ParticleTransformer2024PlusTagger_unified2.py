@@ -110,7 +110,8 @@ class ParticleTransformerTaggerForFinetune(nn.Module):
         else:
             output = 0
 
-        # process suffix FC (if valid)
+        # process suffix FC (if valid) 
+        # -> modify "output" if new layers (fc_suff) are appended after the main model output / after intermediate hidden/fc.0 layers
         with torch.autocast('cuda', enabled=self.main.use_amp):
             if self.fc_suff is not None:
                 append_after = self.fc_suff_kw.get('append_after')
@@ -119,7 +120,6 @@ class ParticleTransformerTaggerForFinetune(nn.Module):
                 elif append_after == 'hidden':
                     output = self.fc_suff(x)
                 elif append_after == 'fc.0':
-                    self.main.part.fc[0].eval()
                     output = self.main.part.fc[0](x)
                     output = self.fc_suff(output)
                 else:
