@@ -169,6 +169,7 @@ def train_classification_sophon(
         tb_helper.write_scalars([
             ("Loss/train (epoch)", total_loss / num_batches, epoch),
             ("Acc/train (epoch)", total_correct / count, epoch),
+            ("lr/train (epoch)", scheduler.get_last_lr()[0] if scheduler else opt.defaults['lr'], epoch),
         ])
 
         # # customization: store hyperparameters
