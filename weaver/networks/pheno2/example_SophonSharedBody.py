@@ -28,6 +28,7 @@ This code is modified from example_Sophon.py
  - add freeze_mode
  - define FC layer outside of the main ParT body
  - allow custom merge_after_nth_layer
+ - new eval/test utilities: custom BkgRej maker; custom label_cls_nodes and label_stored for saving outpout nodes
 '''
 
 def apply_sequential(module_list, x):
@@ -112,7 +113,10 @@ def get_model(data_config, **kwargs):
     cfg.update(**kwargs)
     _logger.info('Model config: %s' % str(cfg))
 
+    # remove the eval/test-time related options from cfg
     eval_kw = cfg.pop('eval_kw', dict())
+    cfg.pop('label_cls_nodes', None)
+    cfg.pop('label_stored', None)
 
     model = ParticleTransformerSophonSharedBodyWrapper(**cfg)
     
@@ -139,6 +143,10 @@ def get_train_fn(data_config, **kwargs):
 
 def get_evaluate_fn(data_config, **kwargs):
     return evaluate_classification_sophon
+
+
+def get_save_fn(data_config, **kwargs):
+    return save_classification_sophon
 
 
 # Customized training and evaluation functions for Sophon
@@ -259,7 +267,7 @@ def evaluate_classification_sophon(model, test_loader, dev, epoch, for_training=
                     labels[k].append(v.numpy(force=True))
                 if not for_training:
                     for k, v in Z.items():
-                        observers[k].append(v)
+                        observers[k].append(v.numpy(force=True))
 
                 num_examples = label.shape[0]
                 label_counter.update(label.numpy(force=True))
@@ -365,3 +373,35 @@ def evaluate_classification_sophon(model, test_loader, dev, epoch, for_training=
                     labels[k] = v.reshape((entry_count, -1))
         observers = {k: _concat(v) for k, v in observers.items()}
         return total_correct / count, scores, labels, observers
+
+
+def save_classification_sophon(args, data_config, scores, labels, observers):
+    import ast
+    network_options = {k: ast.literal_eval(v) for k, v in args.network_option}
+
+    num_classes = network_options['num_classes']
+
+    label_default = [f'label_{i}' for i in range(num_classes)]
+    label_cls_nodes = network_options.get('label_cls_nodes', label_default)
+    label_stored = network_options.get('label_stored', label_cls_nodes) # by default, store all classification node scores
+
+    output = {}
+    output['cls_index'] = labels['truth_label'] # classes can be too many, only store the index
+    for idx, label_name in enumerate(label_cls_nodes):
+        if label_name in label_stored:
+            output[label_name] = (labels['truth_label'] == idx)
+            output['score_' + label_name] = scores[:, idx]
+
+    for k, v in labels.items():
+        if k == data_config.label_names[0]:
+            continue
+        assert v.ndim == 1
+        output[k] = v
+    for k, v in observers.items():
+        assert v.ndim == 1
+        output[k] = v
+    
+    for k in output.keys():
+        print(k, output[k])
+
+    return output
