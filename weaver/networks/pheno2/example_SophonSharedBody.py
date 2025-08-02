@@ -112,7 +112,12 @@ def get_model(data_config, **kwargs):
     cfg.update(**kwargs)
     _logger.info('Model config: %s' % str(cfg))
 
+    eval_kw = cfg.pop('eval_kw', dict())
+
     model = ParticleTransformerSophonSharedBodyWrapper(**cfg)
+    
+    # set eval_kw for ROC curve configuration
+    model.eval_kw = eval_kw
 
     model_info = {
         'input_names': list(data_config.input_names),
@@ -237,6 +242,8 @@ def evaluate_classification_sophon(model, test_loader, dev, epoch, for_training=
     labels_counts = []
     observers = defaultdict(list)
     start_time = time.time()
+    eval_kw = model.module.eval_kw \
+        if isinstance(model, (torch.nn.DataParallel, torch.nn.parallel.DistributedDataParallel)) else model.eval_kw
     with torch.no_grad():
         with tqdm.tqdm(test_loader) as tq:
             for X, y, Z in tq:
@@ -290,18 +297,29 @@ def evaluate_classification_sophon(model, test_loader, dev, epoch, for_training=
     labels = {k: _concat(v) for k, v in labels.items()}
 
     # customized evaluation: making ROC curves for tensorboard monitoring
-    if tb_helper:
-        scores_dict = {
-            'cls_0': scores[:, 0],
-            'cls_1': scores[:, 1],
-            'cls_2': scores[:, 2],
+    if tb_helper and for_training:
+        truth_label = labels['truth_label']
+        scores_dict, flag_dict = {}, {}
+        
+        # Default ROC curve configuration for cls_0, cls_1, cls_2
+        roc_kwargs_default = {
+            'label_inds_map': {
+                'cls_0': [0],
+                'cls_1': [1], 
+                'cls_2': [2],
+            },
+            'comp_list': [('cls_1', 'cls_0'), ('cls_2', 'cls_0')] # ROC curves for A vs B
         }
-        flag_dict = {
-            'cls_0': labels['truth_label'] == 0,
-            'cls_1': labels['truth_label'] == 1,
-            'cls_2': labels['truth_label'] == 2,
-        }
-        comp_list = [('cls_1', 'cls_0'), ('cls_2', 'cls_0')] # ROC curves for A vs B
+        
+        # Use provided roc_kw or fall back to default
+        roc_kwargs = eval_kw.get('roc_kw', roc_kwargs_default)
+        
+        for name, inds in roc_kwargs.get('label_inds_map').items():
+            flag_dict[name] = np.any([truth_label == i for i in inds], axis=0)
+            scores_dict[name] = np.sum(scores[:, inds], axis=1)
+            print(name, flag_dict[name].shape, scores_dict[name].shape)
+        comp_list = roc_kwargs.get('comp_list') # e.g. [('Xbb', 'QCD'), ('Xcc', 'QCD'), ('Xcc', 'Xbb')] # ROC curves for A vs B
+        
         bkgrej = {}
 
         f, ax = plt.subplots(figsize=(5, 5))
