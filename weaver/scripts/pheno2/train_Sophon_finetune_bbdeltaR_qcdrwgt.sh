@@ -18,22 +18,17 @@ if [[ "$current_dir" != *"weaver-core/weaver" ]]; then
 fi
 
 # prepare training dataset
-#  XWW dataset, train:val:test = 64:16:16
-trainset_x2p=$(for i in $(seq 0 63); do echo -n "X2p:${DATADIR_X2P}/train_wqq_sm_ntuple/ntuples_$i.root "; done)
-valset_x2p=$(for i in $(seq 64 79); do echo -n "X2p:${DATADIR_X2P}/train_wqq_sm_ntuple/ntuples_$i.root "; done)
-testset_x2p=$(for i in $(seq 80 95); do echo -n "X2p:${DATADIR_X2P}/train_wqq_sm_ntuple/ntuples_$i.root "; done)
+trainset_res2p=$(for i in $(seq -w 0000 0199); do echo -n "Res2P:${DATADIR}/Pythia/Res2P_$i.parquet "; done)
+valset_res2p=$(for i in $(seq -w 0200 0249); do echo -n "Res2P:${DATADIR}/Pythia/Res2P_$i.parquet "; done)
 
-#  QCD dataset, train:val:test = 56:14:14 (1/5 of JetClassII dataset)
 trainset_qcd=$(for i in $(seq -w 0000 0055); do echo -n "QCD:${DATADIR}/Pythia/QCD_$i.parquet "; done)
 valset_qcd=$(for i in $(seq -w 0280 0293); do echo -n "QCD:${DATADIR}/Pythia/QCD_$i.parquet "; done)
-testset_qcd=$(for i in $(seq -w 0350 0363); do echo -n "QCD:${DATADIR}/Pythia/QCD_$i.parquet "; done)
 
-ARG="--network-config networks/pheno2/example_SophonSharedBody.py -o num_classes 3 -o fc_params [(512,0.1)] \
+ARG="--network-config networks/pheno2/example_SophonSharedBody.py -o num_classes 11 -o fc_params [(512,0.1)] \
 --use-amp --batch-size 512 --start-lr 5e-4 --samples-per-epoch $((2000 * 1024 / $NGPUS)) --samples-per-epoch-val $((1000 * 1024 / $NGPUS)) --num-epochs 20 --optimizer ranger \
---num-workers 4 --fetch-step 1.0 --data-split-num 28 \
---data-train $trainset_x2p $trainset_qcd \
---data-val $valset_x2p $valset_qcd \
---data-test $testset_x2p $testset_qcd \
+--num-workers 4 --fetch-step 1.0 --data-split-num 50 \
+--data-train $trainset_res2p $trainset_qcd \
+--data-val $valset_res2p $valset_qcd \
 --data-config $config \
 --model-prefix model/${PREFIX}/net \
 --predict-output predict/$PREFIX/pred.root "
