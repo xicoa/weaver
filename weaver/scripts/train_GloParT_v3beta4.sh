@@ -126,6 +126,17 @@ run2_repuppi_highi_part2:./datasets/20240824_ak8_Run3_v10/infer_UL17/GluGluToBul
 run2_repuppi_hwwlo:./datasets/20240824_ak8_Run3_v10/infer_UL17/GluGluToBulkGravitonToHHTo4W_JHUGen_MH-50-125-250-300_LowPt_narrow/*.root \
 run2_repuppi_hwwhi:./datasets/20240824_ak8_Run3_v10/infer_UL17/GluGluToBulkGravitonToHHTo4W_JHUGen_MH-50-125-250-300_HighPt_narrow/*.root \
 run2_repuppi_ttbar:./datasets/20240824_ak8_Run3_v10/infer_UL17/ZprimeToTT_M1200to4500_W12to45_TuneCP2_PSweights/*.root \
+zhi:./datasets/20230504_ak8_UL17_v8/infer/BulkGravToZZToZhadZhad_narrow_M-2500_TuneCP5_13TeV-madgraph-pythia/*.root \
+zlo:./datasets/20230504_ak8_UL17_v8/infer/BulkGravToZZToZhadZhad_narrow_M-1000_TuneCP5_13TeV-madgraph-pythia/*.root \
+whi:./datasets/20230504_ak8_UL17_v8/infer/BulkGravToWWToWhadWhad_narrow_M-2500_TuneCP5_13TeV-madgraph-pythia/*.root \
+wlo:./datasets/20230504_ak8_UL17_v8/infer/BulkGravToWWToWhadWhad_narrow_M-1000_TuneCP5_13TeV-madgraph-pythia/*.root \
+run2_repuppi_zhi:./datasets/20240824_ak8_Run3_v10/infer_UL17/BulkGravToZZToZhadZhad_narrow_M-2500_TuneCP5_13TeV-madgraph-pythia/*.root \
+run2_repuppi_zlo:./datasets/20240824_ak8_Run3_v10/infer_UL17/BulkGravToZZToZhadZhad_narrow_M-1000_TuneCP5_13TeV-madgraph-pythia/*.root \
+run2_repuppi_whi:./datasets/20240824_ak8_Run3_v10/infer_UL17/BulkGravToWWToWhadWhad_narrow_M-2500_TuneCP5_13TeV-madgraph-pythia/*.root \
+run2_repuppi_wlo:./datasets/20240824_ak8_Run3_v10/infer_UL17/BulkGravToWWToWhadWhad_narrow_M-1000_TuneCP5_13TeV-madgraph-pythia/*.root \
+ofcttbarsl:./datasets/20230504_ak8_UL17_v8/infer/TTToSemiLeptonic_TuneCP5_13TeV-powheg-pythia8/*.root \
+run3_2023_ofcttbarsl:./datasets/20240824_ak8_Run3_v10/infer_Run3_2023/TTtoLNu2Q_TuneCP5_13p6TeV_powheg-pythia8/*.root \
+run3_2023bpix_ofcttbarsl:./datasets/20240824_ak8_Run3_v10/infer_Run3_2023BPix/TTtoLNu2Q_TuneCP5_13p6TeV_powheg-pythia8/*.root \
 --samples-per-epoch $((15000 * 512 / $NGPUS)) --samples-per-epoch-val $((1000 * 512)) \
 --data-config ${config} \
 --model-prefix model/${PREFIX}/net \
@@ -164,8 +175,8 @@ elif [ $RUN == "autorecover" ]; then
             break
         fi
         echo "Error: return code $ret"
-        # match model/${PREFIX}/net/net_epoch-(\d+)_state.pt and extract the maximum epoch number
-        maxepoch=$(ls model/${PREFIX}/net_epoch-*.pt | sed -n s/.*net_epoch-\([0-9]*\)_state.pt/\1/p | sort -n | tail -n 1)
+        # match model/${PREFIX}/net_epoch-(\d+)_state.pt and extract the maximum epoch number
+        maxepoch=$(ls model/${PREFIX}/net_epoch-*.pt | sed -n 's/.*net_epoch-\([0-9]*\)_state.pt/\1/p' | sort -n | tail -n 1)
         if [ -z $maxepoch ]; then
             epochopts=""
         else

@@ -33,6 +33,12 @@ parser.add_argument('--use-last-model', action='store_true', default=False,
                     help='Simply take the last model as the best model')
 parser.add_argument('--extra-selection', type=str, default=None,
                     help='Additional selection requirement, will modify `selection` to `(selection) & (extra)` on-the-fly')
+parser.add_argument('--extra-selection-train', type=str, default=None,
+                    help='Additional selection requirement for training, will modify `selection` to `(selection) & (extra)` on-the-fly')
+parser.add_argument('--extra-selection-val', type=str, default=None,
+                    help='Additional selection requirement for validation, will modify `selection` to `(selection) & (extra)` on-the-fly')
+parser.add_argument('--extra-selection-test', type=str, default=None,
+                    help='Additional test-time selection requirement, will modify `test_time_selection` to `(test_time_selection) & (extra)` on-the-fly')
 parser.add_argument('--seed', type=int, default=-1,
                     help='Set seed for all torch, numpy utilities for reproducibility')
 parser.add_argument('-c', '--data-config', type=str, default='data/ak15_points_pf_sv_v0.yaml',
@@ -93,6 +99,10 @@ parser.add_argument('-m', '--model-prefix', type=str, default='models/{auto}/net
                          'based on the timestamp and network configuration')
 parser.add_argument('--load-model-weights', type=str, default=None,
                     help='initialize model with pre-trained weights')
+parser.add_argument('--load-model-weights-grouped', nargs='+', default=None,
+                    help='initialize model with multiple pre-trained weights. Each argument should be a 3-tuple: (path, regex_match, string). '
+                         'path: model path to load with torch.load; regex_match: regex to match model_state keys; '
+                         'string: replacement string for the first match. All model states will be merged.')
 parser.add_argument('--exclude-model-weights', type=str, default=None,
                     help='comma-separated regex to exclude matched weights from being loaded, e.g., `a.fc..+,b.fc..+`')
 parser.add_argument('--freeze-model-weights', type=str, default=None,
@@ -183,7 +193,7 @@ def to_filelist(args, mode='train'):
         file_dict[name] = sorted(files)
 
     if args.local_rank is not None:
-        if mode == 'train':
+        if mode == 'train' or mode == 'val':
             local_world_size = int(os.environ['LOCAL_WORLD_SIZE'])
             new_file_dict = {}
             for name, files in file_dict.items():
@@ -250,7 +260,7 @@ def train_load(args):
         raise RuntimeError('Must set --steps-per-epoch when using --in-memory!')
 
     train_data = SimpleIterDataset(train_file_dict, args.data_config, for_training=True,
-                                   extra_selection=args.extra_selection,
+                                   extra_selection=args.extra_selection_train,
                                    load_range_and_fraction=(train_range, args.data_fraction, args.data_split_num),
                                    file_fraction=args.file_fraction,
                                    fetch_by_files=args.fetch_by_files,
@@ -259,7 +269,7 @@ def train_load(args):
                                    in_memory=args.in_memory,
                                    name='train' + ('' if args.local_rank is None else '_rank%d' % args.local_rank))
     val_data = SimpleIterDataset(val_file_dict, args.data_config, for_training=True,
-                                 extra_selection=args.extra_selection,
+                                 extra_selection=args.extra_selection_val,
                                  load_range_and_fraction=(val_range, args.data_fraction, args.data_split_num),
                                  file_fraction=args.file_fraction,
                                  fetch_by_files=args.fetch_by_files,
@@ -319,6 +329,7 @@ def test_load(args):
         _logger.info('Running on test file group %s with %d files:\n...%s', name, len(filelist), '\n...'.join(filelist))
         num_workers = min(args.num_workers, len(filelist))
         test_data = SimpleIterDataset({name: filelist}, args.data_config, for_training=False,
+                                      extra_selection=args.extra_selection_test,
                                       load_range_and_fraction=(tuple(args.test_range), args.data_fraction, args.data_split_num),
                                       fetch_by_files=True, fetch_step=1,
                                     #   fetch_by_files=False, fetch_step=0.05,
@@ -572,7 +583,7 @@ def optim(args, model, device):
                 anneal_strategy='cos', div_factor=25.0, last_epoch=-1 if args.load_epoch is None else args.load_epoch)
             scheduler._update_per_step = True  # mark it to update the lr every step, instead of every epoch
         elif args.lr_scheduler == 'cosanneal':
-            base_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(opt, 4, 2, verbose=False)
+            base_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(opt, 4, 2, verbose=False, last_epoch=-1 if args.load_epoch is None else args.load_epoch)
             from utils.nn.scheduler.warmup import GradualWarmupScheduler
             scheduler = GradualWarmupScheduler(opt, multiplier=1,
                                                 warmup_epoch=5,
@@ -701,12 +712,27 @@ def model_setup(args, data_config):
         
         # for stage3 model
         elif args.load_model_weights.startswith('finetune_stage3'):
-            if args.load_model_weights.startswith('finetune_stage3beta4'):
+            if args.load_model_weights == 'finetune_stage3beta4':
                 model_state = torch.load("./model/ak8_MD_inclv10beta4_ul_manual.ddp4-bs640-lr1p2e-3.nepoch100.farm221/net_best_epoch_state.pt", map_location='cpu')
                 model_state = {f'main.{k}': v for k, v in model_state.items()}
                 missing_keys, unexpected_keys = model.load_state_dict(model_state, strict=False)
                 assert len(unexpected_keys) == 0
                 _logger.info('Model initialized with weights from GloParT v3beta4\n ... Missing: %s\n ... Unexpected: %s' %
+                        (missing_keys, unexpected_keys))
+            if args.load_model_weights == 'finetune_stage3beta4p1':
+                model_state = torch.load("./model/ak8_MD_inclv10beta4_ul_manual.nlayer10.vispart_as_resid.ddp4-bs640-lr1p2e-3.nepoch100.farm221/net_best_epoch_state.pt", map_location='cpu')
+                model_state = {f'main.{k}': v for k, v in model_state.items()}
+                missing_keys, unexpected_keys = model.load_state_dict(model_state, strict=False)
+                assert len(unexpected_keys) == 0
+                _logger.info('Model initialized with weights from GloParT v3beta4p1\n ... Missing: %s\n ... Unexpected: %s' %
+                        (missing_keys, unexpected_keys))
+            if args.load_model_weights == 'finetune_stage3beta4p1_scoutpretrain.tillfc0':
+                model_state = torch.load("./model/ak8_MD_inclv10beta4_ul_manual.nlayer10.vispart_as_resid.ddp4-bs640-lr1p2e-3.nepoch100.scoutpretrain/net_best_epoch_state.pt", map_location='cpu')
+                # get model params except for the last fc.1 layer
+                model_state = {k: v for k, v in model_state.items() if not k.startswith('part.fc.1')}
+                missing_keys, unexpected_keys = model.load_state_dict(model_state, strict=False)
+                assert len(unexpected_keys) == 0
+                _logger.info('Model initialized with weights from GloParT v3beta4p1\n ... Missing: %s\n ... Unexpected: %s' %
                         (missing_keys, unexpected_keys))
 
         else:
@@ -734,6 +760,60 @@ def model_setup(args, data_config):
             missing_keys, unexpected_keys = model.load_state_dict(model_state, strict=False)
             _logger.info('Model initialized with weights from %s\n ... Missing: %s\n ... Unexpected: %s' %
                         (args.load_model_weights, missing_keys, unexpected_keys))
+    
+    # Handle grouped model weights loading
+    if args.load_model_weights_grouped:
+
+        import re
+        # Initialize merged model state
+        merged_model_state = {}
+        
+        # Process each grouped weight argument
+        for arg in args.load_model_weights_grouped:
+            try:
+                # Parse the 3-tuple: (path, regex_match, string)
+                path, regex_match, replacement_string = ast.literal_eval(arg)
+                
+                # Load model state from path
+                model_state = torch.load(path, map_location='cpu')
+                _logger.info(f'Loaded model state from {path}, regex_match: {regex_match}, replacement_string: {replacement_string}')
+
+                # Apply regex replacement to keys
+                for key, value in model_state.items():
+                    if re.match(regex_match, key):
+                        # Replace the first match with replacement_string
+                        new_key = re.sub(regex_match, replacement_string, key, count=1)
+                        merged_model_state[new_key] = value
+                        # print(f' - Key mapping: {key} -> {new_key}')
+                    else:
+                        # Keep original key if no match
+                        merged_model_state[key] = value
+                        
+            except (ValueError, SyntaxError) as e:
+                _logger.error(f'Failed to parse grouped weight argument "{arg}": {e}')
+                continue
+            except Exception as e:
+                _logger.error(f'Failed to load model from grouped weight argument "{arg}": {e}')
+                continue
+        
+        # Apply exclude patterns if specified
+        if args.exclude_model_weights:
+            exclude_patterns = args.exclude_model_weights.split(',')
+            _logger.info('The following weights will not be loaded: %s' % str(exclude_patterns))
+            key_state = {}
+            for k in merged_model_state.keys():
+                key_state[k] = True
+                for pattern in exclude_patterns:
+                    if re.match(pattern, k):
+                        key_state[k] = False
+                        break
+            merged_model_state = {k: v for k, v in merged_model_state.items() if key_state[k]}
+        
+        # Load the merged state dict
+        missing_keys, unexpected_keys = model.load_state_dict(merged_model_state, strict=False)
+        _logger.info('Model initialized with grouped weights\n ... Missing: %s\n ... Unexpected: %s' %
+                    (missing_keys, unexpected_keys))
+    
     if args.freeze_model_weights:
         import re
         freeze_patterns = args.freeze_model_weights.split(',')
@@ -1024,7 +1104,10 @@ def _main(args):
                         _logger.info('Waiting for model %s to be ready...' % (args.model_prefix + '_epoch-%d_state.pt' % epoch))
                         time.sleep(10)
                     time.sleep(10)
-                    model.load_state_dict(torch.load(args.model_prefix + '_epoch-%d_state.pt' % epoch, map_location=dev))
+                    if isinstance(model, (torch.nn.DataParallel, torch.nn.parallel.DistributedDataParallel)):
+                        model.module.load_state_dict(torch.load(args.model_prefix + '_epoch-%d_state.pt' % epoch, map_location=dev))
+                    else:
+                        model.load_state_dict(torch.load(args.model_prefix + '_epoch-%d_state.pt' % epoch, map_location=dev))
 
                 valid_metric = evaluate(model, val_loader, dev, epoch, loss_func=loss_func,
                                         steps_per_epoch=args.steps_per_epoch_val, tb_helper=tb)
@@ -1136,6 +1219,13 @@ def main():
     if args.data_split_group > 1:
         assert args.data_split_num == 1
         args.data_split_num = args.data_split_group
+    
+    if args.extra_selection is not None:
+        assert all(getattr(args, n) is None for n in ['extra_selection_train', 'extra_selection_val', 'extra_selection_test']), \
+            'Cannot use both `--extra-selection` and `--extra-selection-{train,val,test}`'
+        args.extra_selection_train = args.extra_selection
+        args.extra_selection_val = args.extra_selection
+        args.extra_selection_test = args.extra_selection
 
     if '{auto}' in args.model_prefix or '{auto}' in args.log_file:
         import hashlib

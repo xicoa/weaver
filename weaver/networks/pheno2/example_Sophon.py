@@ -13,7 +13,8 @@ mpl.use('Agg')
 
 from utils.logger import _logger
 from utils.nn.tools import (
-    _concat
+    _concat,
+    AllGather,
 )
 from utils.import_tools import import_module
 
@@ -168,6 +169,7 @@ def train_classification_sophon(
         tb_helper.write_scalars([
             ("Loss/train (epoch)", total_loss / num_batches, epoch),
             ("Acc/train (epoch)", total_correct / count, epoch),
+            ("lr/train (epoch)", scheduler.get_last_lr()[0] if scheduler else opt.defaults['lr'], epoch),
         ])
 
         # # customization: store hyperparameters
@@ -205,9 +207,10 @@ def evaluate_classification_sophon(model, test_loader, dev, epoch, for_training=
             for X, y, Z in tq:
                 # X, y: torch.Tensor; Z: ak.Array
                 inputs = [X[k].to(dev) for k in data_config.input_names]
+                y = {k: AllGather.apply(v.to(dev)) for k, v in y.items()}
                 label = y[data_config.label_names[0]].long().to(dev)
                 entry_count += label.shape[0]
-                logits = model(*inputs)
+                logits = AllGather.apply(model(*inputs))
                 scores.append(torch.softmax(logits.float(), dim=1).numpy(force=True))
 
                 for k, v in y.items():
