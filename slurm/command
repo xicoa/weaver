@@ -1,0 +1,5 @@
+squeue -A cmsgpu -o "%.18i %.8u %.10T %.10M %.20b"
+sbatch 
+scancel
+srun -A cmsgpu -p gpu --qos=debug --gres=gpu:1 --cpus-per-task=4 --mem-per-cpu=8G --pty bash
+scontrol show job 3524887

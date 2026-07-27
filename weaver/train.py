@@ -930,15 +930,31 @@ def save_root(args, output_path, data_config, scores, labels, observers, save_fn
                 for idx_cls, label_name in enumerate(data_config.label_value_cls_names):
                     output['output_' + name + '_' + label_name] = scores_reg[:, (idx-1) * data_config.label_value_cls_num + idx_cls]
     # write classification nodes
+    # if args.train_mode in ['cls', 'hybrid']:
+        # if data_config.label_value is not None:
+        #     for idx, label_name in enumerate(data_config.label_value):
+        #         output[label_name] = (labels['_label_'] == idx)
+        #         output['score_' + label_name] = scores_cls[:, idx]
+        # else:
+        #     output['cls_index'] = labels['_label_'] # classes can be too many, only store the index
+        #     for idx, label_name in enumerate(data_config.label_value_cls_names):
+        #         output['score_' + label_name] = scores_cls[:, idx]
     if args.train_mode in ['cls', 'hybrid']:
-        if data_config.label_value is not None:
-            for idx, label_name in enumerate(data_config.label_value):
-                output[label_name] = (labels['_label_'] == idx)
-                output['score_' + label_name] = scores_cls[:, idx]
+        cls_label = labels.get('_label_', labels.get(data_config.label_names[0]))
+        output['cls_index'] = cls_label
+        n_cls = scores_cls.shape[1]
+        label_value = data_config.options.get('label_value', None)
+        label_value_cls_names = data_config.options.get('label_value_cls_names', None)
+        if label_value is not None and len(label_value) == n_cls:
+            class_names = list(label_value)
+        elif label_value_cls_names is not None and len(label_value_cls_names) == n_cls:
+            class_names = list(label_value_cls_names)
         else:
-            output['cls_index'] = labels['_label_'] # classes can be too many, only store the index
-            for idx, label_name in enumerate(data_config.label_value_cls_names):
-                output['score_' + label_name] = scores_cls[:, idx]
+            class_names = [f'cls{idx}' for idx in range(n_cls)]
+        for idx, class_name in enumerate(class_names):
+            output[f'score_{class_name}'] = scores_cls[:, idx]
+            output[f'true_{class_name}'] = (cls_label == idx)
+
     for k, v in labels.items():
         if k == data_config.label_names[0]:
             continue

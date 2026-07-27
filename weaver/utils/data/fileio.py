@@ -238,7 +238,7 @@ def _read_root(filepath, branches, load_range=None, treename=None):
     }
     specific_vars_included = {}
     '''
-    # for CLIP's fine-tuning test
+    '''
     specific_vars = {
         "'ggHH_kl_1_kt_1' in filepath": {'event_class': 0},
         "'ggHH_kl_0_kt_1' in filepath": {'event_class': 1},
@@ -248,6 +248,13 @@ def _read_root(filepath, branches, load_range=None, treename=None):
         "'train_hyy4q_fixmassrat_0p4' in filepath": {'jet_label': 10001},
         "'train_hyy4q_fixmassrat_0p6432' in filepath": {'jet_label': 10002},
         "'train_hyy4q_fixmassrat_0p8' in filepath": {'jet_label': 10003},
+    }
+    '''
+    # for CLIP's fine-tuning test
+    specific_vars = {
+        "__import__('os').path.basename(filepath).startswith(('DY', 'dy'))": {'process': 0},
+        "__import__('os').path.basename(filepath).startswith(('VBF', 'vbf'))": {'process': 1},
+        "__import__('os').path.basename(filepath).startswith(('ggH', 'ggh'))": {'process': 2},
     }
     specific_vars_included = {}
     # specific_vars = {}
@@ -400,6 +407,10 @@ def _write_root(file, table, treename='Events', compression=-1, step=1048576):
     if compression == -1:
         compression = uproot.LZ4(4)
     with uproot.recreate(file, compression=compression) as fout:
+        table = {
+            k: ak.to_numpy(v) if isinstance(v, ak.Array) else v
+            for k, v in table.items()
+        }
         tree = fout.mktree(treename, {k: v.dtype for k, v in table.items()})
         start = 0
         while start < len(list(table.values())[0]) - 1:
