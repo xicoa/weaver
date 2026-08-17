@@ -7,6 +7,7 @@ import shutil
 import glob
 import argparse
 import functools
+import hashlib
 import numpy as np
 import math
 import torch
@@ -56,7 +57,8 @@ parser.add_argument('-t', '--data-test', nargs='*', default=[],
                     help='testing files; supported syntax:'
                          ' (a) plain list, `--data-test /path/to/a/* /path/to/b/*`;'
                          ' (b) keyword-based, `--data-test a:/path/to/a/* b:/path/to/b/*`, will produce output_a, output_b;'
-                         ' (c) split output per N input files, `--data-test a%10:/path/to/a/*`, will split per 10 input files')
+                         ' (c) split output per N input files, `--data-test a%10:/path/to/a/*`, will split per 10 input files;'
+                         ' (d) `each:/path/to/a/*`, will make each input file write to its own prediction output')
 parser.add_argument('--data-fraction', type=float, default=1,
                     help='fraction of events to load from each file; for training, the events are randomly selected for each epoch')
 parser.add_argument('--data-split-num', type=int, default=1,
@@ -227,6 +229,14 @@ def to_filelist(args, mode='train'):
     return file_dict, filelist
 
 
+def _safe_output_name_from_file(filepath):
+    stem = os.path.splitext(os.path.basename(filepath))[0]
+    digest = hashlib.md5(filepath.encode('utf-8')).hexdigest()[:8]
+    if stem:
+        return f'{stem}_{digest}'
+    return digest
+
+
 def train_load(args):
     """
     Loads the training data.
@@ -305,10 +315,24 @@ def test_load(args):
             name, fp = f.split(':')
             if '%' in name:
                 name, split = name.split('%')
+                if name == 'each':
+                    raise ValueError('`each` mode does not support `%N` splitting; use `each:/path/to/files/*` instead.')
                 split_dict[name] = int(split)
         else:
             name, fp = '', f
         files = glob.glob(fp)
+        if name == 'each':
+            for filepath in sorted(files):
+                each_name = _safe_output_name_from_file(filepath)
+                if each_name in file_dict:
+                    suffix = 1
+                    unique_name = f'{each_name}_{suffix}'
+                    while unique_name in file_dict:
+                        suffix += 1
+                        unique_name = f'{each_name}_{suffix}'
+                    each_name = unique_name
+                file_dict[each_name] = [filepath]
+            continue
         if name in file_dict:
             file_dict[name] += files
         else:
